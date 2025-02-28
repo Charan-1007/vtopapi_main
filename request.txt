@@ -1,0 +1,23 @@
+URL: https://vtopapi-main.onrender.com/initialdata
+Method: POST
+Headers: 
+  Content-Type: application/json
+
+Body (raw JSON):
+{
+    "username": "username",
+    "password": "password"
+}
+
+
+URL: https://vtopapi-main.onrender.com/semesterdata
+Method: POST
+Headers:
+  Content-Type: application/json
+
+Body (raw JSON):
+{
+    "username": "username",
+    "password": "password",
+    "semesterId": "VL20242501"
+}
