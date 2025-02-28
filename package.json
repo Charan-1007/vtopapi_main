@@ -1,0 +1,41 @@
+{
+  "name": "vtopapi_main",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "vtop",
+    "api",
+    "vit"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "VTOP API for accessing VIT student data",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "axios-cookiejar-support": "^5.0.5",
+    "body-parser": "^1.20.2",
+    "canvas": "^3.1.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "jimp": "^1.6.0",
+    "p-limit": "^6.2.0",
+    "sharp": "^0.33.5",
+    "tesseract.js": "^6.0.0",
+    "tough-cookie": "^5.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
