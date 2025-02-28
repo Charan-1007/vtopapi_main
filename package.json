@@ -3,39 +3,30 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js"
   },
-  "keywords": [
-    "vtop",
-    "api",
-    "vit"
-  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Charan-1007/vtopapi_main.git"
+  },
   "author": "",
   "license": "ISC",
-  "description": "VTOP API for accessing VIT student data",
+  "bugs": {
+    "url": "https://github.com/Charan-1007/vtopapi_main/issues"
+  },
+  "homepage": "https://github.com/Charan-1007/vtopapi_main#readme",
+  "description": "",
   "dependencies": {
-    "axios": "^1.7.9",
+    "axios": "^1.8.1",
     "axios-cookiejar-support": "^5.0.5",
-    "body-parser": "^1.20.2",
-    "canvas": "^3.1.0",
+    "body-parser": "^1.20.3",
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.1",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "express-rate-limit": "^7.1.5",
-    "helmet": "^7.1.0",
-    "jimp": "^1.6.0",
-    "p-limit": "^6.2.0",
-    "sharp": "^0.33.5",
-    "tesseract.js": "^6.0.0",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
     "tough-cookie": "^5.1.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.3"
-  },
-  "engines": {
-    "node": ">=14.0.0"
   }
 }
