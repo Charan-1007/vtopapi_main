@@ -39,20 +39,99 @@ A Node.js-based API service to programmatically retrieve academic data from VIT 
 ## Installation & Usage 🛠️
 
 1. **Clone repository**
-
 ```bash
 git clone https://github.com/Charan-1007/vtopapi_main.git
 cd vtopapi_main
+ ```
+```
 
----
+2. Install dependencies
+```bash
+npm install
+ ```
 
+3. Start the server
+```bash
+npm start
+ ```
+
+The server will start on port 3000 by default or use the PORT environment variable.
+
+## API Endpoints 🌐
+### 1. Initial Data
+```http
+POST /initialdata
+Content-Type: application/json
+
+{
+    "username": "your_registration_number",
+    "password": "your_password"
+}
+ ```
+```
+
+### 2. Semester Data
+```http
+POST /semesterdata
+Content-Type: application/json
+
+{
+    "username": "your_registration_number",
+    "password": "your_password",
+    "semesterId": "VL20242501"
+}
+ ```
+```
+
+## Response Structure 📦
+```json
+{
+  "status": "success",
+  "data": {
+    "semester": [...],
+    "Attendance": [...],
+    "Course": [...],
+    "Marks": [...],
+    "CGPA": {...},
+    "ExamSchedule": [...]
+  }
+}
+ ```
+
+## Security Features 🔒
+- Rate limiting (100 requests per 15 minutes)
+- Helmet.js security headers
+- CORS protection
+- Cookie jar support for session management
+- Secure credential handling
 ## Security & Disclaimer 🔒
+⚠️ Important Notice:
 
-⚠️ **Important Notice:**
-
-- This project is **not officially affiliated** with VIT University.
+- This project is not officially affiliated with VIT University.
 - Use at your own risk - credentials are transmitted securely but depend on VTOP's security.
 - API may break with VTOP portal updates.
 - Never share your credentials with untrusted parties.
 - Maintained for educational purposes only.
-```
+## Technical Details 🔧
+### Dependencies
+- express : Web framework
+- axios : HTTP client
+- cheerio : HTML parsing
+- canvas : CAPTCHA processing
+- tough-cookie : Cookie management
+- helmet : Security headers
+- cors : CORS support
+- express-rate-limit : Rate limiting
+### Key Features Implementation
+- Custom CAPTCHA solver using image processing
+- Concurrent request handling for detailed data
+- Robust error handling and retry mechanisms
+- Session management with cookie persistence
+## Contributing 🤝
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
