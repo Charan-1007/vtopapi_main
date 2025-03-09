@@ -1405,7 +1405,7 @@ app.post('/semesterdata', async (req, res) => {
         // Get or create client for this user
         const client = getUserClient(username);
         let studentId, csrf;
-        const session = userSessions.get(username);
+        let session = userSessions.get(username);
 
         // Check if we have valid session data
         if (session?.studentId && session?.csrf) {
@@ -1413,7 +1413,7 @@ app.post('/semesterdata', async (req, res) => {
             csrf = session.csrf;
             console.log(`Using existing session for user: ${username}`);
         } else {
-            console.log(`Creating new session for user: ${username}`);
+            console.log(`No existing session, creating new login for user: ${username}`);
             // Need to login first
             const loginResult = await attemptLogin(username, password, client);
             
@@ -1425,7 +1425,7 @@ app.post('/semesterdata', async (req, res) => {
             // Extract required tokens
             studentId = extractStudentId(loginResult.data);
             const csrfMatch = loginResult.data.match(/name="_csrf"\s+value="([^"]+)"/);
-            csrf = csrfMatch ? csrf[1] : null;
+            csrf = csrfMatch ? csrfMatch[1] : null;
 
             if (!studentId || !csrf) {
                 userSessions.delete(username);
@@ -1435,10 +1435,15 @@ app.post('/semesterdata', async (req, res) => {
                 });
             }
 
-            // Store session data
-            session.studentId = studentId;
-            session.csrf = csrf;
-            session.lastUsed = Date.now();
+            // Create and store new session
+            session = {
+                client,
+                studentId,
+                csrf,
+                lastUsed: Date.now()
+            };
+            userSessions.set(username, session);
+            console.log(`Created new session for user: ${username}`);
         }
 
         // Fetch all semester data concurrently
@@ -1458,18 +1463,6 @@ app.post('/semesterdata', async (req, res) => {
             fetchDigitalAssignments(studentId, csrf, semesterId, client)
         ]);
 
-        // Fetch detailed attendance data if available
-        let detailedAttendance = null;
-        if (attendanceData?.courses?.length > 0) {
-            detailedAttendance = await fetchDetailedAttendance(
-                attendanceData,
-                studentId,
-                csrf,
-                semesterId,
-                client
-            );
-        }
-
         // Update session last used time
         session.lastUsed = Date.now();
 
@@ -1481,7 +1474,13 @@ app.post('/semesterdata', async (req, res) => {
                 timeTable: timeTableData,
                 attendance: {
                     summary: attendanceData,
-                    detailed: detailedAttendance
+                    detailed: await fetchDetailedAttendance(
+                        attendanceData,
+                        studentId,
+                        csrf,
+                        semesterId,
+                        client
+                    )
                 },
                 marks: marksData,
                 examSchedule: examScheduleData,
@@ -1489,6 +1488,7 @@ app.post('/semesterdata', async (req, res) => {
                 assignments: assignmentsData
             },
             sessionInfo: {
+                isNewSession: !session.existingSession,
                 lastUsed: new Date(session.lastUsed).toISOString(),
                 expiresIn: Math.floor((SESSION_TIMEOUT - (Date.now() - session.lastUsed)) / 1000)
             },
