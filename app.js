@@ -1328,33 +1328,47 @@ app.post('/initialdata', async (req, res) => {
     try {
         // Get or create client for this user
         const client = getUserClient(username);
-        
-        // Attempt login
-        const loginResult = await attemptLogin(username, password, client);
-        
-        if (!loginResult.success) {
-            userSessions.delete(username); // Clear failed session
-            return res.status(401).json(loginResult);
+        let studentId, csrf;
+        let session = userSessions.get(username);
+
+        // Check if we have valid session data
+        if (session?.studentId && session?.csrf) {
+            studentId = session.studentId;
+            csrf = session.csrf;
+            console.log(`Using existing session for user: ${username}`);
+        } else {
+            console.log(`No existing session, creating new login for user: ${username}`);
+            // Need to login first
+            const loginResult = await attemptLogin(username, password, client);
+            
+            if (!loginResult.success) {
+                userSessions.delete(username);
+                return res.status(401).json(loginResult);
+            }
+
+            // Extract required tokens
+            studentId = extractStudentId(loginResult.data);
+            const csrfMatch = loginResult.data.match(/name="_csrf"\s+value="([^"]+)"/);
+            csrf = csrfMatch ? csrfMatch[1] : null;
+
+            if (!studentId || !csrf) {
+                userSessions.delete(username);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: "Failed to extract required tokens" 
+                });
+            }
+
+            // Create and store new session
+            session = {
+                client,
+                studentId,
+                csrf,
+                lastUsed: Date.now()
+            };
+            userSessions.set(username, session);
+            console.log(`Created new session for user: ${username}`);
         }
-
-        // Extract required tokens from login response
-        const studentId = extractStudentId(loginResult.data);
-        const csrfMatch = loginResult.data.match(/name="_csrf"\s+value="([^"]+)"/);
-        const csrf = csrfMatch ? csrfMatch[1] : null;
-
-        if (!studentId || !csrf) {
-            userSessions.delete(username);
-            return res.status(500).json({ 
-                success: false, 
-                message: "Failed to extract required tokens" 
-            });
-        }
-
-        // Store additional session data
-        const session = userSessions.get(username);
-        session.studentId = studentId;
-        session.csrf = csrf;
-        session.lastUsed = Date.now();
 
         // Fetch all initial data concurrently
         const [profileData, gradeData, semesterList, feeData] = await Promise.all([
@@ -1363,6 +1377,9 @@ app.post('/initialdata', async (req, res) => {
             fetchSemesterList(studentId, csrf, client),
             fetchFeeReceipts(studentId, csrf, client)
         ]);
+
+        // Update session last used time
+        session.lastUsed = Date.now();
 
         // Return comprehensive response
         res.json({
@@ -1374,8 +1391,9 @@ app.post('/initialdata', async (req, res) => {
             semesterList: semesterList,
             feeReceipts: feeData,
             sessionInfo: {
+                isNewSession: !session.existingSession,
                 created: new Date(session.lastUsed).toISOString(),
-                expiresIn: SESSION_TIMEOUT / 1000, // in seconds
+                expiresIn: SESSION_TIMEOUT / 1000 // in seconds
             },
             fetchTimestamp: new Date().toISOString()
         });
