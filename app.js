@@ -32,6 +32,55 @@ app.use(limiter);
 // Existing middleware
 app.use(bodyParser.json());
 
+// User session cache for connection pooling
+const userSessions = new Map();
+const SESSION_TIMEOUT = 5 * 60 * 1000; // 30 minutes
+
+// Get or create a client for a specific user
+function getUserClient(username) {
+    // Check if we have a valid session for this user
+    if (userSessions.has(username)) {
+        const session = userSessions.get(username);
+        // Check if session is still valid (not expired)
+        if (Date.now() - session.lastUsed < SESSION_TIMEOUT) {
+            // Update last used timestamp
+            session.lastUsed = Date.now();
+            console.log(`Reusing existing session for user: ${username}`);
+            return session.client;
+        }
+        // Session expired, remove it
+        console.log(`Session expired for user: ${username}`);
+        userSessions.delete(username);
+    }
+    
+    // Create a new client for this user
+    console.log(`Creating new session for user: ${username}`);
+    const client = getNewClient();
+    
+    // Store the new session
+    userSessions.set(username, {
+        client: client,
+        lastUsed: Date.now()
+    });
+    
+    return client;
+}
+
+// Periodically clean up expired sessions
+setInterval(() => {
+    const now = Date.now();
+    let expiredCount = 0;
+    for (const [username, session] of userSessions.entries()) {
+        if (now - session.lastUsed > SESSION_TIMEOUT) {
+            userSessions.delete(username);
+            expiredCount++;
+        }
+    }
+    if (expiredCount > 0) {
+        console.log(`Cleaned up ${expiredCount} expired sessions. Active sessions: ${userSessions.size}`);
+    }
+}, 5 * 60 * 1000); // Check every 5 minutes
+
 // Create a function to get a new client with fresh cookies
 function getNewClient() {
     const cookieJar = new tough.CookieJar();
@@ -1273,26 +1322,39 @@ app.post('/initialdata', async (req, res) => {
     const { username, password } = req.body;
     
     if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required' });
+        return res.status(400).json({ success: false, message: "Username and password are required" });
     }
 
-    const client = getNewClient();
-
     try {
+        // Get or create client for this user
+        const client = getUserClient(username);
+        
+        // Attempt login
         const loginResult = await attemptLogin(username, password, client);
         
         if (!loginResult.success) {
-            return res.status(401).json({ error: loginResult.message });
+            userSessions.delete(username); // Clear failed session
+            return res.status(401).json(loginResult);
         }
 
-        const loginData = loginResult.data;
-        const studentId = extractStudentId(loginData);
-        const csrfMatch = loginData.match(/name="_csrf"\s+value="([^"]+)"/);
+        // Extract required tokens from login response
+        const studentId = extractStudentId(loginResult.data);
+        const csrfMatch = loginResult.data.match(/name="_csrf"\s+value="([^"]+)"/);
         const csrf = csrfMatch ? csrfMatch[1] : null;
 
         if (!studentId || !csrf) {
-            return res.status(500).json({ error: 'Failed to extract required tokens' });
+            userSessions.delete(username);
+            return res.status(500).json({ 
+                success: false, 
+                message: "Failed to extract required tokens" 
+            });
         }
+
+        // Store additional session data
+        const session = userSessions.get(username);
+        session.studentId = studentId;
+        session.csrf = csrf;
+        session.lastUsed = Date.now();
 
         // Fetch all initial data concurrently
         const [profileData, gradeData, semesterList, feeData] = await Promise.all([
@@ -1302,16 +1364,30 @@ app.post('/initialdata', async (req, res) => {
             fetchFeeReceipts(studentId, csrf, client)
         ]);
 
+        // Return comprehensive response
         res.json({
+            success: true,
+            studentId,
+            csrf,
             profile: profileData,
             gradeHistory: gradeData,
             semesterList: semesterList,
             feeReceipts: feeData,
+            sessionInfo: {
+                created: new Date(session.lastUsed).toISOString(),
+                expiresIn: SESSION_TIMEOUT / 1000, // in seconds
+            },
             fetchTimestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("Error in /initialdata endpoint:", error);
+        userSessions.delete(username); // Clear session on error
+        res.status(500).json({ 
+            success: false, 
+            message: "Internal server error",
+            error: error.message 
+        });
     }
 });
 
@@ -1319,25 +1395,50 @@ app.post('/semesterdata', async (req, res) => {
     const { username, password, semesterId } = req.body;
     
     if (!username || !password || !semesterId) {
-        return res.status(400).json({ error: 'Username, password and semesterId are required' });
+        return res.status(400).json({ 
+            success: false, 
+            message: "Username, password, and semesterId are required" 
+        });
     }
 
-    const client = getNewClient();
-
     try {
-        const loginResult = await attemptLogin(username, password, client);
-        
-        if (!loginResult.success) {
-            return res.status(401).json({ error: loginResult.message });
-        }
+        // Get or create client for this user
+        const client = getUserClient(username);
+        let studentId, csrf;
+        const session = userSessions.get(username);
 
-        const loginData = loginResult.data;
-        const studentId = extractStudentId(loginData);
-        const csrfMatch = loginData.match(/name="_csrf"\s+value="([^"]+)"/);
-        const csrf = csrfMatch ? csrfMatch[1] : null;
+        // Check if we have valid session data
+        if (session?.studentId && session?.csrf) {
+            studentId = session.studentId;
+            csrf = session.csrf;
+            console.log(`Using existing session for user: ${username}`);
+        } else {
+            console.log(`Creating new session for user: ${username}`);
+            // Need to login first
+            const loginResult = await attemptLogin(username, password, client);
+            
+            if (!loginResult.success) {
+                userSessions.delete(username);
+                return res.status(401).json(loginResult);
+            }
 
-        if (!studentId || !csrf) {
-            return res.status(500).json({ error: 'Failed to extract required tokens' });
+            // Extract required tokens
+            studentId = extractStudentId(loginResult.data);
+            const csrfMatch = loginResult.data.match(/name="_csrf"\s+value="([^"]+)"/);
+            csrf = csrfMatch ? csrf[1] : null;
+
+            if (!studentId || !csrf) {
+                userSessions.delete(username);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: "Failed to extract required tokens" 
+                });
+            }
+
+            // Store session data
+            session.studentId = studentId;
+            session.csrf = csrf;
+            session.lastUsed = Date.now();
         }
 
         // Fetch all semester data concurrently
@@ -1347,7 +1448,7 @@ app.post('/semesterdata', async (req, res) => {
             marksData,
             examScheduleData,
             gradeViewData,
-            digitalAssignmentsData
+            assignmentsData
         ] = await Promise.all([
             fetchTimeTable(studentId, csrf, semesterId, client),
             fetchAttendance(studentId, csrf, semesterId, client),
@@ -1357,43 +1458,51 @@ app.post('/semesterdata', async (req, res) => {
             fetchDigitalAssignments(studentId, csrf, semesterId, client)
         ]);
 
-        // Fetch detailed data if available
+        // Fetch detailed attendance data if available
         let detailedAttendance = null;
-        let detailedAssignments = null;
-
-        if (attendanceData) {
+        if (attendanceData?.courses?.length > 0) {
             detailedAttendance = await fetchDetailedAttendance(
-                attendanceData, 
-                studentId, 
-                csrf, 
+                attendanceData,
+                studentId,
+                csrf,
                 semesterId,
                 client
             );
         }
 
-        if (digitalAssignmentsData?.overview?.courses) {
-            detailedAssignments = await Promise.all(
-                digitalAssignmentsData.overview.courses.map(course =>
-                    fetchAssignmentDetails(studentId, csrf, course, client)
-                )
-            );
-        }
+        // Update session last used time
+        session.lastUsed = Date.now();
 
+        // Return comprehensive response
         res.json({
+            success: true,
             semesterId,
-            timeTable: timeTableData,
-            marks: marksData,
-            examSchedule: examScheduleData,
-            gradeView: gradeViewData,
-            attendance: attendanceData,
-            digitalAssignments: digitalAssignmentsData,
-            detailedAttendance,
-            detailedAssignments: detailedAssignments?.filter(Boolean),
+            data: {
+                timeTable: timeTableData,
+                attendance: {
+                    summary: attendanceData,
+                    detailed: detailedAttendance
+                },
+                marks: marksData,
+                examSchedule: examScheduleData,
+                gradeView: gradeViewData,
+                assignments: assignmentsData
+            },
+            sessionInfo: {
+                lastUsed: new Date(session.lastUsed).toISOString(),
+                expiresIn: Math.floor((SESSION_TIMEOUT - (Date.now() - session.lastUsed)) / 1000)
+            },
             fetchTimestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("Error in /semesterdata endpoint:", error);
+        userSessions.delete(username); // Clear session on error
+        res.status(500).json({ 
+            success: false, 
+            message: "Internal server error",
+            error: error.message 
+        });
     }
 });
 
